@@ -10,9 +10,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
 using System;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 namespace AppointmentApi
 {
@@ -31,15 +34,38 @@ namespace AppointmentApi
             services.AddControllers();
             var connectionString = Configuration.GetConnectionString("AppointmentApi");
             services.AddDbContext<AppointmentApiContext>(options => options.UseSqlServer(connectionString));
-            services.AddSwaggerGen();
+
             services.AddSwaggerGen(c =>
             {
+                OpenApiSecurityScheme securityDefinition = new OpenApiSecurityScheme()
+                {
+                    Name = "Authorization",
+                    BearerFormat = "JWT",
+                    Scheme = "Bearer",
+                    Description = "Specify the authorization token",
+                    In = ParameterLocation.Header,
+                    Type = SecuritySchemeType.Http,
+                };
+                c.AddSecurityDefinition("Bearer", securityDefinition);
                 c.SwaggerDoc("v1", new OpenApiInfo
                 {
                     Version = "v1",
                     Title = "Calendar API",
                     Description = "A simple API to Implement Appointment",
                 });
+            });
+            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = false;
+                options.SaveToken = true;
+                options.TokenValidationParameters = new TokenValidationParameters()
+                {
+                    ValidateIssuer = false,
+                    ValidateAudience = false,
+                    ValidAudience = Configuration["Jwt:Audience"],
+                    ValidIssuer = Configuration["Jwt:Issue"],
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"])),
+                };
             });
         }
 
@@ -55,10 +81,14 @@ namespace AppointmentApi
 
             app.UseRouting();
 
+            app.UseAuthentication();
             app.UseAuthorization();
 
             app.UseSwagger();
-            app.UseSwaggerUI(c => {
+
+            app.UseSwaggerUI(c =>
+            {
+
                 c.SwaggerEndpoint("/swagger/v1/swagger.json", "Showing API V1");
             });
 

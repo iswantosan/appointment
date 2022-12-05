@@ -12,9 +12,24 @@ namespace AppointmentApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class AppointmentController : Controller
     {
         private readonly AppointmentApiContext _context;
+
+        private async Task<bool> CheckConflictAsync(DateTime date, int userId, int id = 0)
+        {
+            return await _context.Calendars.Where(s => s.Date == date 
+            && s.UserId == userId
+            && s.CalendarId != id).OrderBy(s => s.Date).AnyAsync();
+        }
+
+        private int GetUserId()
+        {
+            var identity = User.Claims.ToList();
+            var userId = identity.FirstOrDefault(s => s.Type == "Id").Value;
+            return Int32.Parse(userId);
+        }
 
         public AppointmentController(AppointmentApiContext context)
         {
@@ -24,7 +39,9 @@ namespace AppointmentApi.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<CalendarDTO>> GetCalendars(int id)
         {
-            var calendar = await _context.Calendars.FindAsync(id);
+            int userId = GetUserId();
+
+            var calendar = await _context.Calendars.FirstOrDefaultAsync(s => s.CalendarId == id && s.UserId == userId);
 
             if (calendar == null)
             {
@@ -39,15 +56,14 @@ namespace AppointmentApi.Controllers
             };
         }
 
-        private async Task<bool> CheckConflictAsync(DateTime date, int id = 0)
-        {
-            return await _context.Calendars.Where(s => s.Date == date && s.CalendarId != id).OrderBy(s => s.Date).AnyAsync();
-        }
-
-
         [HttpPost]
         public async Task<ActionResult<Calendars>> PostCalendarAsync([FromBody] CalendarDTO payload)
         {
+            if (payload == null)
+            {
+                return BadRequest();
+            }
+
             if (string.IsNullOrEmpty(payload.Title))
             {
                 ModelState.AddModelError("title", "Title is required");
@@ -60,7 +76,7 @@ namespace AppointmentApi.Controllers
                 return BadRequest(ModelState);
             }
 
-            if (await CheckConflictAsync(payload.Date))
+            if (await CheckConflictAsync(payload.Date, GetUserId()))
             {
                 ModelState.AddModelError("date", "Conflict calendar");
                 return BadRequest(ModelState);
@@ -68,6 +84,7 @@ namespace AppointmentApi.Controllers
 
             var model = new Calendars()
             {
+                UserId = GetUserId(),
                 Title = payload.Title,
                 Date = payload.Date,
                 Notes = payload.Notes,
@@ -82,6 +99,11 @@ namespace AppointmentApi.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutCalendarAsync(int id, [FromBody] CalendarDTO payload)
         {
+            if (payload == null)
+            {
+                return BadRequest();
+            }
+
             if (string.IsNullOrEmpty(payload.Title))
             {
                 ModelState.AddModelError("title", "Title is required");
@@ -100,7 +122,9 @@ namespace AppointmentApi.Controllers
                 return BadRequest(ModelState);
             }
 
-            var calendar = await _context.Calendars.FindAsync(id);
+            int userId = GetUserId();
+
+            var calendar = await _context.Calendars.FirstOrDefaultAsync(s => s.CalendarId == id && s.UserId == userId);
 
             if (calendar == null)
             {
@@ -118,7 +142,8 @@ namespace AppointmentApi.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Calendars>>> ListCalendarsAsync(DateTime? from, DateTime? to, int? skip, int? take)
         {
-            var calendars = _context.Calendars.AsQueryable();
+            var userId = GetUserId();
+            var calendars = _context.Calendars.Where(s => s.UserId == userId).AsQueryable();
 
             if (from.HasValue)
             {
@@ -146,7 +171,9 @@ namespace AppointmentApi.Controllers
         [HttpDelete("{id}")]
         public async Task<ActionResult<CalendarDTO>> DeleteProductAsync(int id)
         {
-            var calendar = await _context.Calendars.FindAsync(id);
+            var userId = GetUserId();
+            var calendar = await _context.Calendars.FirstOrDefaultAsync(s => s.CalendarId == id && s.UserId == userId);
+
             if (calendar == null)
             {
                 return NotFound();
@@ -159,9 +186,9 @@ namespace AppointmentApi.Controllers
         }
 
         [HttpGet("conflict")]
-        public async Task<ActionResult> IsConflictAsync(DateTime date)
+        public async Task<ActionResult> IsConflictAsync(DateTime date, int userId)
         {
-            var conflictedCalendars = await _context.Calendars.Where(s => s.Date == date).OrderBy(s => s.Date).ToListAsync();
+            var conflictedCalendars = await _context.Calendars.Where(s => s.Date == date && s.UserId == userId).OrderBy(s => s.Date).ToListAsync();
 
             return new OkObjectResult(new
             {
