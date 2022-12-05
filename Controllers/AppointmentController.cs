@@ -39,6 +39,11 @@ namespace AppointmentApi.Controllers
             };
         }
 
+        private async Task<bool> CheckConflictAsync(DateTime date, int id = 0)
+        {
+            return await _context.Calendars.Where(s => s.Date == date && s.CalendarId != id).OrderBy(s => s.Date).AnyAsync();
+        }
+
 
         [HttpPost]
         public async Task<ActionResult<Calendars>> PostCalendarAsync([FromBody] CalendarDTO payload)
@@ -52,6 +57,12 @@ namespace AppointmentApi.Controllers
             if (payload.Date < System.DateTime.Now)
             {
                 ModelState.AddModelError("date", "Invalid date");
+                return BadRequest(ModelState);
+            }
+
+            if (await CheckConflictAsync(payload.Date))
+            {
+                ModelState.AddModelError("date", "Conflict calendar");
                 return BadRequest(ModelState);
             }
 
@@ -80,6 +91,12 @@ namespace AppointmentApi.Controllers
             if (payload.Date < System.DateTime.Now)
             {
                 ModelState.AddModelError("date", "Invalid date");
+                return BadRequest(ModelState);
+            }
+
+            if (await CheckConflictAsync(payload.Date, id))
+            {
+                ModelState.AddModelError("date", "Conflict calendar");
                 return BadRequest(ModelState);
             }
 
@@ -144,9 +161,10 @@ namespace AppointmentApi.Controllers
         [HttpGet("conflict")]
         public async Task<ActionResult> IsConflictAsync(DateTime date)
         {
-            var conflictedCalendars  = await _context.Calendars.Where(s => s.Date == date).OrderBy(s => s.Date).ToListAsync();
+            var conflictedCalendars = await _context.Calendars.Where(s => s.Date == date).OrderBy(s => s.Date).ToListAsync();
 
-            return new OkObjectResult(new {
+            return new OkObjectResult(new
+            {
                 conflict = conflictedCalendars.Any(),
                 conflictedCalendars
             });
